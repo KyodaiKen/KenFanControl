@@ -5,12 +5,12 @@ namespace WebApi.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class SampleController : ControllerBase
+    public class FanContController : ControllerBase
     {
-        private readonly ILogger<SampleController> Logger;
+        private readonly ILogger<FanContController> Logger;
         private readonly List<FanController> FanControllers;
 
-        public SampleController(ILogger<SampleController> Logger, FanControllers FanControllers)
+        public FanContController(ILogger<FanContController> Logger, FanControllers FanControllers)
         {
             this.Logger = Logger;
             this.FanControllers = FanControllers.Controllers;
