@@ -17,13 +17,13 @@ namespace WebApi.Controllers
         }
 
         [HttpGet(nameof(GetAvailableDevices))]
-        public IEnumerable<string> GetAvailableDevices()
+        public Dictionary<byte, string> GetAvailableDevices()
         {
-            var available = new List<string>();
+            var available = new Dictionary<byte, string>();
 
             foreach (var controller in FanControllers)
             {
-                available.Add(controller.DeviceName);
+                available.Add(controller.DeviceID, controller.DeviceName);
             }
 
             return available;
