@@ -1,3 +1,4 @@
+using CustomFanController;
 using WebApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,7 +7,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services.AddSingleton<FanControllers>();
+builder.Services.AddSingleton<List<FanController>>((serviceProvider) =>
+{
+    return ControllerFactory.GetCompatibleDevicesAsync(serviceProvider.GetService<ILoggerFactory>()).GetAwaiter().GetResult();
+});
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();

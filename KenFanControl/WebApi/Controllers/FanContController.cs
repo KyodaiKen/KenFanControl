@@ -10,10 +10,10 @@ namespace WebApi.Controllers
         private readonly ILogger<FanContController> Logger;
         private readonly List<FanController> FanControllers;
 
-        public FanContController(ILogger<FanContController> Logger, FanControllers FanControllers)
+        public FanContController(ILogger<FanContController> Logger, List<FanController> FanControllers)
         {
             this.Logger = Logger;
-            this.FanControllers = FanControllers.Controllers;
+            this.FanControllers = FanControllers;
         }
 
         [HttpGet(nameof(GetAvailableDevices))]

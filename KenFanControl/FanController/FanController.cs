@@ -715,7 +715,6 @@ namespace CustomFanController
                     if (CommandAnswers.TryGetAndRemove(commandKey, out var data))
                     {
                         job(data);
-                        CommandAnswers.Remove(commandKey);
                         return;
                     }
                 }
