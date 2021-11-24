@@ -548,14 +548,17 @@ void setup()
     //Zero curve and matrix memory
     for (unsigned int c = 0; c < N_CURVES; c++)
     {
+
         for (i = 0; i < CURVE_UB; i++)
         {
             cdta[c][i].temp = 0;
             cdta[c][i].dc = 0;
-            cdtal[c] = 0;
         }
+
         for (unsigned int s = 0; s < N_SENSORS; s++)
             m[c][s] = 0;
+        
+        cdtal[c] = 0;
     }
 
     //Get data from the EEPROM
@@ -702,7 +705,7 @@ void setup()
     #pragma endregion READ_EEPROM
 
     #pragma region PREP_THERMAL_READINGS
-     //Rolling average position need to start at zero
+    //Rolling average position need to start at zero
     tp = 0;
 
     //Set temperatures to 1000 so it is known that it's the first reading
@@ -802,18 +805,14 @@ void loop()
 
             if (Serial.available() == 1)
             {
-
                 unsigned char new_id = Serial.read();
                 EEPROM.write(EEPROM_ID_OFFSET, new_id);
                 writeEEPROM_CRC();
                 sendOK(request);
-
             }
             else
             {
-
                 sendError(ERR_TIMEOUT, request);
-
             }
 
             break;

@@ -14,11 +14,11 @@ namespace CustomFanController
         }
 
         // Remove current data so the next time wait's for the updated data instead of reading the old cache
-        public static bool TryGetAndRemove<T, Y>(this Dictionary<T, Y> Dictionary, T key, out Y data)
+        public static bool TryGetAndRemove<T, Y>(this Dictionary<T, Y> Dictionary, T key, out Y data) where T : notnull
         {
             if (!Dictionary.ContainsKey(key))
             {
-                data = default;
+                data = default(Y);
                 return false;
             }
 
