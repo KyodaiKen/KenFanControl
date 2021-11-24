@@ -1,5 +1,4 @@
 using CustomFanController;
-using WebApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
