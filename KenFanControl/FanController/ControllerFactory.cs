@@ -1,13 +1,15 @@
 ﻿using Microsoft.Extensions.Logging;
 using RJCP.IO.Ports;
 
-namespace CustomFanController
+namespace KenFanControl
 {
     public class ControllerFactory
     {
+#pragma warning disable CS1030 // #advertencia: 'linux may have issues'
 #warning linux may have issues
         //https://github.com/jcurl/RJCP.DLL.SerialPortStream#40-installation
         public static async Task<List<FanController>> GetCompatibleDevicesAsync(ILoggerFactory? loggerFactory = null)
+#pragma warning restore CS1030 // #advertencia: 'linux may have issues'
         {
             var Logger = loggerFactory?.CreateLogger($"{nameof(ControllerFactory)}");
 
@@ -91,8 +93,7 @@ namespace CustomFanController
 
             if (controllers.Count < 1)
             {
-                Logger?.LogCritical("No controllers found!");
-                return null;
+                Logger?.LogWarning("No controllers found!");
             }
             else {
                 Logger?.LogInformation($"Gathered {controllers.Count} controller" + (controllers.Count != 1 ? "s!" : "!"));

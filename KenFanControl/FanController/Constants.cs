@@ -1,15 +1,17 @@
 ﻿using System.Text;
 
-namespace CustomFanController
+namespace KenFanControl
 {
     internal static class Protocol
     {
         internal const int BufferSize = 64;
+        internal const int BufferOverhead = 1;
+        internal const int MaxPayloadSize = BufferSize - BufferOverhead;
 
         internal const int Timeout = 5000;
         internal static readonly TimeSpan CommandAnswerTimeout = TimeSpan.FromSeconds(5);
 
-        public static class HandShake
+        internal static class HandShake
         {
             internal const int BaudRate = 115200;
             internal const int AttemptsToConnect = 5;
@@ -18,7 +20,7 @@ namespace CustomFanController
         }
 
         ////REQUEST BYTES////
-        public static class Request
+        internal static class Request
         {
             internal const byte RQST_IDENTIFY = 0xF0;
             internal const byte RQST_CAPABILITIES = 0xFC;
@@ -46,7 +48,7 @@ namespace CustomFanController
         }
 
         ////RESPONSE BYTES////
-        public static class Status
+        internal static class Status
         {
             internal const byte RESP_OK = 0x01;
             internal const byte RESP_ERR = 0xFF;
@@ -54,7 +56,7 @@ namespace CustomFanController
         }
 
         ////RESPONSE ERRORS////
-        public static class Error
+        internal static class Error
         {
             internal const byte ERR_INDEX_OUT_OF_BOUNDS = 0x10;
             internal const byte ERR_TEMP_HIGHER_THAN_HUNDRED = 0x11;

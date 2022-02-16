@@ -1,4 +1,5 @@
-using CustomFanController;
+using KenFanControl;
+using KenFanControl.DataStructures;
 using Microsoft.AspNetCore.Mvc;
 
 namespace WebApi.Controllers

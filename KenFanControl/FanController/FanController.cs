@@ -1,33 +1,28 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using KenFanControl.DataStructures;
+using KenFanControl.DriverHelpers;
+using Microsoft.Extensions.Logging;
 using RJCP.IO.Ports;
-using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Buffers;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace CustomFanController
+namespace KenFanControl
 {
     public class FanController : IDisposable
     {
         #region "Events"
-        public delegate void SensorsUpdateEvent(byte DeviceId, object Data);
-        public event SensorsUpdateEvent? OnSensorsUpdate;
-
-        public delegate void ErrorEvent(byte DeviceId, object Data);
+        public delegate void ErrorEvent(byte DeviceId, string description, Memory<byte> Data);
         public event ErrorEvent? OnError;
 
-        public delegate void WarningEvent(byte DeviceId, object Data);
+        public delegate void WarningEvent(byte DeviceId, string description, Memory<byte> Data);
         public event WarningEvent? OnWarning;
-
         #endregion "Events"
 
         #region Private locals
 
+        private static readonly MemoryPool<byte> MemoryPool = MemoryPool<byte>.Shared;
+        private static readonly ArrayPool<byte> ArrayPool = ArrayPool<byte>.Shared;
+
         private readonly SerialPortStream SerialPort;
-        // Message queue, it helps to sync the answers to the commands sent to the controller
-        private static readonly Dictionary<byte, byte[]> CommandAnswers = new();
         private bool Listening;
         private bool disposedValue;
         private readonly EventWaitHandle waitHandle = new AutoResetEvent(true);
@@ -67,75 +62,139 @@ namespace CustomFanController
             }
 
             Listening = true;
+        }
 
-            // Non awaited so it works in other thread
-
-            var readBuffer = new byte[Protocol.BufferSize];
-
-            // Send it to other thread so it doesn't block the main thread
-            Task.Run(async () =>
+        public void StopListening()
+        {
+            if (!Listening)
             {
-                while (Listening)
+                return;
+            }
+
+            if (SerialPort.IsOpen)
+            {
+                SerialPort.Close();
+                SerialPort.Dispose();
+            }
+
+            Listening = false;
+        }
+
+        private async Task<ReadResults> ProcessCommand(byte command, byte[]? payload = null)
+        {
+#warning consider using timeout if everything goes wrong
+            waitHandle.WaitOne();
+            await SendCommand(command, payload);
+            var readResults = await ReadAnswer();
+            waitHandle.Set();
+            return readResults;
+        }
+
+        // Temporal error till we migrate all the methods
+        [Obsolete($"Replace with '{nameof(ProcessCommand)}' call", true)]
+        private async Task SendCommand(byte command, byte[]? payload = null)
+        {
+#warning consider using "ArrayPool"
+            int payload_len = 0;
+            if (payload != null)
+                payload_len = payload.Length;
+
+            var preparedCommand = new byte[payload_len + 1];
+            preparedCommand[0] = command;
+
+            if (payload is not null)
+            {
+                if (payload.Length > Protocol.MaxPayloadSize)
                 {
-                    // Proposal => Read till ending pattern is found, use if needed to process larger inputs that needs several packages to arrive
-
-                    var readTask = SerialPort.ReadAsync(readBuffer).AsTask();
-
-                    if (await Task.WhenAny(readTask, Task.Delay(Protocol.Timeout)) != readTask)
-                    {
-                        const string errmsg = "Data receive timeout";
-                        Logger?.LogWarning(errmsg);
-                        OnWarning?.Invoke(DeviceID, errmsg);
-                        continue;
-                    }
-
-                    var data = await readTask;
-
-                    Logger?.LogDebug($"Data Received {Convert.ToHexString(readBuffer[0..data])}");
-
-                    if (data < 1)
-                    {
-                        const string errmsg = "No data received!";
-                        Logger?.LogError(errmsg);
-                        OnError?.Invoke(DeviceID, errmsg);
-                        //Abort operation
-                        continue;
-                    }
-
-                    // Status Byte
-                    var status = readBuffer[0];
-
-                    if (status == Protocol.Status.RESP_ERR)
-                    {
-                        Logger?.LogError("Error received");
-                        OnError?.Invoke(DeviceID, readBuffer);
-                        // Abort Operation
-                        continue;
-                    }
-
-                    if (status == Protocol.Status.RESP_WRN)
-                    {
-                        const string errmsg = "Warning received";
-                        Logger?.LogWarning(errmsg, readBuffer);
-                        OnWarning?.Invoke(DeviceID, readBuffer);
-                    }
-
-                    // Kind of response Byte
-                    var kind = readBuffer[1];
-
-                    if (!CommandAnswers.ContainsKey(kind))
-                    {
-                        CommandAnswers.Add(kind, readBuffer[2..data]);
-                    }
-                    else
-                    {
-                        CommandAnswers[kind] = readBuffer[2..data];
-                    }
-
-                    // new data recived, send pulse so listeners can check if it's what they need
-                    waitHandle.Set();
+                    throw new ArgumentException($"Payload '{payload.Length}' is too large. Maximum allowed is '{Protocol.MaxPayloadSize}'");
                 }
-            });
+
+                Array.Copy(payload, 0, preparedCommand, 1, payload.Length);
+            }
+
+            await SerialPort.SendCommand(preparedCommand);
+        }
+
+        private async Task<ReadResults> ReadAnswer()
+        {
+            var buffer = MemoryPool.Rent(Protocol.BufferSize);
+
+            var results = new ReadResults()
+            {
+                ReadStatus = ReadStatus.Ok,
+            };
+
+            // Proposal => Read till ending pattern is found, use if needed to process larger inputs that needs several packages to arrive
+
+#warning maybe adding a cancelation task is a good idea, just in case it doesn't automatically do cleanup
+            var readTask = SerialPort.ReadAsync(buffer.Memory).AsTask();
+
+            if (await Task.WhenAny(readTask, Task.Delay(Protocol.Timeout)) != readTask)
+            {
+                const string errmsg = "Data receive timeout";
+                Logger?.LogWarning(errmsg);
+                OnWarning?.Invoke(DeviceID, errmsg, null);
+
+                buffer.Dispose();
+
+                //Abort operation
+
+                results.ReadStatus = ReadStatus.Error;
+                return results;
+            }
+
+            var readDataLength = await readTask;
+
+            if (readDataLength < 1)
+            {
+                const string errmsg = "No data received!";
+                Logger?.LogError(errmsg);
+                OnError?.Invoke(DeviceID, errmsg, null);
+
+                buffer.Dispose();
+
+                //Abort operation
+                results.ReadStatus = ReadStatus.Error;
+                return results;
+            }
+
+            var data = buffer.Memory[..readDataLength];
+
+            Logger?.LogDebug($"Data Received {Convert.ToHexString(data.Span)}");
+
+            // Status Byte
+            var status = data.Span[0];
+
+            if (status == Protocol.Status.RESP_ERR)
+            {
+                const string errmsg = "Error received";
+                Logger?.LogError(errmsg, data);
+                OnError?.Invoke(DeviceID, errmsg, data);
+
+                buffer.Dispose();
+
+                // Abort Operation
+                results.ReadStatus = ReadStatus.Error;
+                results.Data = data;
+                return results;
+            }
+
+            if (status == Protocol.Status.RESP_WRN)
+            {
+                buffer.Dispose();
+
+                const string errmsg = "Warning received";
+                Logger?.LogWarning(errmsg, data);
+                OnWarning?.Invoke(DeviceID, errmsg, data);
+
+                // Abort Operation
+                results.ReadStatus = ReadStatus.Warning;
+            }
+
+            // Kind of response Byte Id
+            results.ResponseKind = data.Span[1];
+            results.Data = data;
+            return results;
         }
 
         internal async Task InitializeDevice()
@@ -159,21 +218,6 @@ namespace CustomFanController
             }
         }
 
-        public void StopListening()
-        {
-            if (!Listening)
-            {
-                return;
-            }
-
-            if (SerialPort.IsOpen)
-            {
-                SerialPort.Close();
-                SerialPort.Dispose();
-            }
-
-            Listening = false;
-        }
         #endregion
 
         #region Get Commands
@@ -183,20 +227,26 @@ namespace CustomFanController
 
             Logger?.LogInformation($"Sending get capabilities command...");
 
-            await SendCommand(commandKey);
+            var result = await ProcessCommand(commandKey);
 
-            DeviceCapabilities dc = null;
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            if (result.ReadStatus == ReadStatus.Error)
             {
-                dc = new DeviceCapabilities()
-                {
-                    NumberOfSensors = data[0],
-                    NumberOfChannels = data[1]
-                };
 
-                Logger?.LogInformation($"NumberOfSensors => {data[0]}, NumberOfChannels => {data[1]}");
-            });
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
+
+            var dc = new DeviceCapabilities();
+
+            dc.Deserialize(result.DataSpan);
+
+            Logger?.LogInformation($"NumberOfSensors => {dc.NumberOfSensors}, NumberOfChannels => {dc.NumberOfChannels}");
 
             return dc;
         }
@@ -205,192 +255,140 @@ namespace CustomFanController
         {
             byte commandKey = Protocol.Request.RQST_GET_CAL_RESISTRS;
 
-            var cc = new ControllerConfig
-            {
-                ThermalSensors = new ThermalSensor[DeviceCapabilities.NumberOfSensors]
-            };
-
             Logger?.LogInformation($"Sending get calibration resistor values command...");
-            await SendCommand(commandKey);
-            var sb = new StringBuilder();
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            var resultCalResist = await ProcessCommand(commandKey);
+
+            if (resultCalResist.ReadStatus == ReadStatus.Error)
             {
-                if (data.Length != DeviceCapabilities.NumberOfSensors * 4)
-                {
-                    throw new ArgumentException("Controller returned the wrong number of sensor information");
-                }
 
-                for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-                {
-                    if (cc.ThermalSensors[i] == null) cc.ThermalSensors[i] = new ThermalSensor();
-                    cc.ThermalSensors[i].CalibrationResistorValue = BitConverter.ToSingle(data.AsSpan()[(i * 4)..(i * 4 + 4)]);
-                    sb.AppendLine($"Retrieved resistor value {cc.ThermalSensors[i].CalibrationResistorValue} for sensor ID {i}");
-                }
-            });
-            Logger?.LogDebug(sb.ToString());
-            sb.Clear();
+            }
+            else if (resultCalResist.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
 
             commandKey = Protocol.Request.RQST_GET_CAL_OFFSETS;
             Logger?.LogInformation($"Sending get calibration offset values command...");
-            await SendCommand(commandKey);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            var resultCalOffsets = await ProcessCommand(commandKey);
+
+            if (resultCalOffsets.ReadStatus == ReadStatus.Error)
             {
-                if (data.Length != DeviceCapabilities.NumberOfSensors * 4)
-                {
-                    throw new ArgumentException("Controller returned the wrong number of sensor information");
-                }
 
-                for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-                {
-                    cc.ThermalSensors[i].CalibrationOffset = BitConverter.ToSingle(data.AsSpan()[(i * 4)..(i * 4 + 4)]);
-                    sb.AppendLine($"Retrieved offset value {cc.ThermalSensors[i].CalibrationOffset} for sensor ID {i}");
-                }
-            });
+            }
+            else if (resultCalOffsets.ReadStatus == ReadStatus.Warning)
+            {
 
-            Logger?.LogDebug(sb.ToString());
-            sb.Clear();
+            }
+            else
+            {
+
+            }
 
             commandKey = Protocol.Request.RQST_GET_CAL_SH_COEFFS;
             Logger?.LogInformation($"Sending get calibration Steinhart-Hart coefficients command...");
-            await SendCommand(commandKey);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            var resultSteinhartHartCoefficients = await ProcessCommand(commandKey);
+
+            if (resultSteinhartHartCoefficients.ReadStatus == ReadStatus.Error)
             {
-                if (data.Length != DeviceCapabilities.NumberOfSensors * 12)
-                {
-                    throw new ArgumentException("Controller returned the wrong number of sensor information");
-                }
 
-                for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-                {
-                    float[] values = new float[3];
-                    int di = i * 12;
-                    for (int c = 0; c < 3; c++)
-                    {
-                        int idc = c * 4;
-                        values[c] = BitConverter.ToSingle(data.AsSpan()[(di + idc)..(di + idc + 4)]);
-                    }
-                    cc.ThermalSensors[i].CalibrationSteinhartHartCoefficients = values;
-                    sb.AppendLine($"Retrieved Steinhart-Hart coefficients {string.Join(" ", cc.ThermalSensors[i].CalibrationSteinhartHartCoefficients)} for sensor ID {i}");
-                }
-            });
+            }
+            else if (resultSteinhartHartCoefficients.ReadStatus == ReadStatus.Warning)
+            {
 
-            Logger?.LogDebug(sb.ToString());
-            sb.Clear();
+            }
+            else
+            {
+
+            }
 
             commandKey = Protocol.Request.RQST_GET_PINS;
             Logger?.LogInformation($"Sending get thermistor and PWM channel pin numbers command...");
+
+            var resultPins = await ProcessCommand(commandKey);
+
+            if (resultPins.ReadStatus == ReadStatus.Error)
+            {
+
+            }
+            else if (resultPins.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
+
+            var cc = new ControllerConfig();
+
+            cc.Deserialize(new ControllerConfigDeserializationHelper()
+            {
+                RawOffsets = resultCalOffsets.DataSpan,
+                RawResistors = resultCalResist.DataSpan,
+                RawSteinhartHartCoefficients = resultSteinhartHartCoefficients.DataSpan,
+                RawPins = resultPins.DataSpan,
+            }, DeviceCapabilities);
+
+            commandKey = Protocol.Request.RQST_GET_PINS;
+            
             cc.PWMChannels = new PWMChannel[DeviceCapabilities.NumberOfChannels];
 
-            await SendCommand(commandKey);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                if (data.Length != DeviceCapabilities.NumberOfSensors + DeviceCapabilities.NumberOfChannels)
-                {
-                    throw new ArgumentException("Controller returned the wrong number of sensor information");
-                }
-
-                for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-                {
-                    cc.ThermalSensors[i].Pin = data[i];
-                    sb.AppendLine($"Retrieved pin number for sensor ID {i}: {data[i]}");
-                }
-
-                for (int i = 0; i < DeviceCapabilities.NumberOfChannels; i++)
-                {
-                    cc.PWMChannels[i] = new PWMChannel
-                    {
-                        Pin = data[i + 3]
-                    };
-                    sb.AppendLine($"Retrieved pin number for PWM channel ID {i}: {data[i + 3]}");
-                }
-            });
-
-
-            Logger?.LogDebug(sb.ToString());
-            sb.Clear();
-
-            //Check EEPROM health
-            commandKey = Protocol.Request.RQST_GET_EERPOM_HEALTH;
-            Logger?.LogInformation($"Sending get EEPROM health command...");
-
-            await SendCommand(commandKey);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                if(data[0] == 0x01)
-                {
-                    EEPROM_OK = true;
-                    Logger?.LogInformation("EEPROM OK!");
-                }
-                else
-                {
-                    EEPROM_OK = false;
-                }
-            });
-
-            if(!EEPROM_OK)
-            {
-                Logger?.LogWarning($"The controller had an EEPROM error and was reset to factory defaults!");
-            }
+#warning shouldn't this be the first call?
+            await CheckEEPROMHealth();
 
             return cc;
         }
 
+        public async Task CheckEEPROMHealth()
+        {
+            //Check EEPROM health
+            var commandKey = Protocol.Request.RQST_GET_EERPOM_HEALTH;
+            Logger?.LogInformation($"Sending get EEPROM health command...");
+
+            var result = await ProcessCommand(commandKey);
+
+            if (result.ReadStatus == ReadStatus.Ok)
+            {
+                EEPROM_OK = true;
+                Logger?.LogInformation("EEPROM OK!");
+                return;
+            }
+
+            EEPROM_OK = false;
+            Logger?.LogWarning($"The controller had an EEPROM error and was reset to factory defaults!");
+        }
+
         public async Task<Readings> GetReadings()
         {
+            const byte commandKey = Protocol.Request.RQST_GET_SENSOR_READINGS;
+
+            Logger?.LogInformation($"Sending get readings command...");
+
+            var result = await ProcessCommand(commandKey);
+
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
+
             var Readings = new Readings();
 
-            const byte commandKey = Protocol.Request.RQST_GET_SENSOR_READINGS;
-            Logger?.LogInformation($"Sending get readings command...");
-            await SendCommand(commandKey);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                Logger?.LogInformation($"Received data, length {data.Length}");
-
-                var sb = new StringBuilder();
-
-                // Convert data to curve
-
-                //Check data length and validate it
-                if (data.Length != DeviceCapabilities.NumberOfSensors * 4 + DeviceCapabilities.NumberOfChannels * 8)
-                {
-                    throw new ArgumentException("Data length does not match device capabilities.");
-                }
-
-                Readings.TemperatureReadings = new TemperatureReading[DeviceCapabilities.NumberOfSensors];
-
-                for (int i = 0; i < Readings.TemperatureReadings.Length; i++)
-                {
-                    int di = i * 4;
-                    Readings.TemperatureReadings[i] = new TemperatureReading
-                    {
-                        Temperature = BitConverter.ToSingle(data.AsSpan()[di..(di + 4)])
-                    };
-
-                    sb.AppendLine($"Temperature sensor ... {i}: {Readings.TemperatureReadings[i].Temperature }");
-                }
-
-                Readings.ChannelReadings = new ChannelReading[DeviceCapabilities.NumberOfChannels];
-
-                for (int i = 0; i < Readings.TemperatureReadings.Length; i++)
-                {
-                    int di = i * 8 + 12;
-                    Readings.ChannelReadings[i] = new ChannelReading
-                    {
-                        MatrixResult = BitConverter.ToSingle(data.AsSpan()[di..(di + 4)]),
-                        DutyCycle = BitConverter.ToSingle(data.AsSpan()[(di + 4)..(di + 8)])
-                    };
-
-                    sb.AppendLine($"Matrix results channel {i}: {Readings.ChannelReadings[i].MatrixResult}");
-                    sb.AppendLine($"Duty cycle channel ... {i}: {Readings.ChannelReadings[i].DutyCycle}");
-                }
-                Logger?.LogDebug(sb.ToString()); 
-            });
+            Readings.Deserialize(result.DataSpan, DeviceCapabilities);
 
             return Readings;
         }
@@ -665,77 +663,6 @@ namespace CustomFanController
             return true;
         }
         #endregion
-
-        #region Helpers
-
-        private async Task SendCommand(byte command, byte[]? payload = null)
-        {
-            const int maxPayloadSize = Protocol.BufferSize - 1;
-            int payload_len = 0;
-            if (payload != null) payload_len = payload.Length;
-
-            var preparedCommand = new byte[payload_len + 1];
-            preparedCommand[0] = command;
-
-            if (payload is not null)
-            {
-                if (payload.Length > Protocol.BufferSize - 1)
-                {
-                    throw new ArgumentException($"Payload '{payload.Length}' is too large. Maximum allowed is '{maxPayloadSize}'");
-                }
-
-                Array.Copy(payload, 0, preparedCommand, 1, payload.Length);
-            }
-
-            await SerialPort.SendCommand(preparedCommand);
-        }
-
-        private async Task DoWhenAnswerRecivedWithTimeoutAsync(byte commandKey, Action<byte[]> job)
-        {
-            var tokenSource = new CancellationTokenSource(Protocol.CommandAnswerTimeout);
-            CancellationToken cancellationToken = tokenSource.Token;
-
-            var work = Task.Run(() =>
-            {
-                // Were we already canceled?
-                cancellationToken.ThrowIfCancellationRequested();
-
-                while (true)
-                {
-                    // Poll on this property if you have to do
-                    // other cleanup before throwing.
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        // Clean up here, then...
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-
-                    waitHandle.WaitOne();
-
-                    if (CommandAnswers.TryGetAndRemove(commandKey, out var data))
-                    {
-                        job(data);
-                        return;
-                    }
-                }
-            }, tokenSource.Token); // Pass same token to Task.Run.
-
-            try
-            {
-                await work;
-            }
-            catch
-            {
-                throw;
-            }
-            finally
-            {
-                tokenSource.Dispose();
-                work.Dispose();
-            }
-        }
-
-        #endregion  Helpers
 
         #region IDisposable Implementation
         protected virtual void Dispose(bool disposing)

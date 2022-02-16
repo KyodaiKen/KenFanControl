@@ -1,4 +1,4 @@
-using CustomFanController;
+using KenFanControl;
 
 var builder = WebApplication.CreateBuilder(args);
 

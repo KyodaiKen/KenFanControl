@@ -1,7 +1,7 @@
-﻿using RJCP.IO.Ports;
+﻿ using RJCP.IO.Ports;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace CustomFanController
+namespace KenFanControl
 {
     // Investigate BinaryReader Class https://docs.microsoft.com/en-us/dotnet/api/system.io.binaryreader?view=net-6.0
     public static class Extensions

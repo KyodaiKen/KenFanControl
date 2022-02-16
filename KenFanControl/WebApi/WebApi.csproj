@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FanController\FanController.csproj" />
+    <ProjectReference Include="..\FanController\KenFanControl.csproj" />
   </ItemGroup>
 
 </Project>

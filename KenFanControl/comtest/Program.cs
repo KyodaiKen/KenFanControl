@@ -1,9 +1,10 @@
-﻿using CustomFanController;
+﻿using KenFanControl;
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using KenFanControl.DataStructures;
 
 namespace comtest
 {
@@ -21,7 +22,7 @@ namespace comtest
                     .AddFilter("Microsoft", LogLevel.Warning)
                     .AddFilter("System", LogLevel.Warning)
                     .AddConsole()
-                    .AddFile($"./Logs/{nameof(FanController)}-{{Date}}.txt", minimumLevel: LogLevel.Trace, levelOverrides: null, isJson: false, fileSizeLimitBytes: 1073741824, retainedFileCountLimit: 10);
+                    .AddFile($"./Logs/{nameof(KenFanControl)}-{{Date}}.txt", minimumLevel: LogLevel.Trace, levelOverrides: null, isJson: false, fileSizeLimitBytes: 1073741824, retainedFileCountLimit: 10);
                     //.AddEventLog()
                     ;
             });
@@ -43,7 +44,7 @@ namespace comtest
             foreach (var controller in controllers)
             {
                 controller.OnError += OnError;
-                controller.OnSensorsUpdate += OnSensorsUpdate;
+                controller.OnWarning += OnSensorsUpdate;
 
                 //Test EEPROM commands
                 //await controller.RequestStoreToEEPROM();
@@ -97,16 +98,20 @@ namespace comtest
             return 0;
         }
 
-        private static void OnSensorsUpdate(byte DeviceId, object Data)
+        private static void OnSensorsUpdate(byte DeviceId, string description, Memory<byte> Data)
         {
             Console.WriteLine($"Device => '{DeviceId}' Data => '{Data}'");
         }
 
-        private static void OnError(byte deviceId, object Data)
+        private static void OnError(byte deviceId, string description, Memory<byte> Data)
         {
             string message = "";
-            if (Data.GetType() == typeof(string)) message = (string)Data;
-            if (Data.GetType() == typeof(byte[])) message = Convert.ToHexString((byte[])Data);
+
+            // If this fails it's my fault
+            object bytes = Data.ToArray();
+
+            if (Data.GetType() == typeof(string)) message = (string)bytes;
+            if (Data.GetType() == typeof(byte[])) message = Convert.ToHexString((byte[])bytes);
 
             Console.WriteLine($"Device {deviceId} returned the error {message}");
         }
