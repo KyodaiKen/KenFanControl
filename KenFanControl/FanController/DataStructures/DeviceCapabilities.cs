@@ -7,13 +7,14 @@ namespace KenFanControl.DataStructures
         public byte NumberOfSensors;
         public byte NumberOfChannels;
 
-        public override void Deserialize(Span<byte> raw)
+        public void Deserialize(Span<byte> raw)
         {
             NumberOfSensors = raw[0];
             NumberOfChannels = raw[1];
         }
 
-        public override Memory<byte> Serialize()
+#warning Delete?
+        public byte[] Serialize()
         {
             throw new NotImplementedException();
         }

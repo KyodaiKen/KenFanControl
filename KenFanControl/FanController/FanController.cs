@@ -453,15 +453,13 @@ namespace KenFanControl
         #endregion
 
         #region Set Commands
-        public async Task<bool> SetCurve(byte curveID, Curve curve)
+        public async Task<bool> SetCurve(Curve curve)
         {
             const byte commandKey = Protocol.Request.RQST_SET_CURVE;
 
             Logger?.LogInformation($"Sending set curve command...");
 
-            var data = curve.Serialize();
-
-            var payload = curveID.Concatenate(data);
+            var payload = curve.Serialize();
 
             Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
 
@@ -485,20 +483,13 @@ namespace KenFanControl
             return true;
         }
 
-        public async Task<bool> SetMatrix(byte curveID, Matrix matrix)
+        public async Task<bool> SetMatrix(Matrix matrix)
         {
             const byte commandKey = Protocol.Request.RQST_SET_MATRIX;
 
             Logger?.LogInformation($"Sending set matrix command...");
 
-            byte[] payload = new byte[13];
-
-            payload[0] = curveID;
-
-            for (int i = 0; i < 3; i++)
-            {
-                Array.Copy(BitConverter.GetBytes(matrix.MatrixPoints[i]), 0, payload, i * 4 + 1, 4);
-            }
+            var payload = matrix.Serialize();
 
             Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
 

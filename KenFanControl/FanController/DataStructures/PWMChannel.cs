@@ -4,9 +4,10 @@
     {
         public byte Pin { get; set; }
 
-        public override void Deserialize(Span<byte> raw)
+        // Done that way to keep consistency
+        public void Deserialize(byte raw)
         {
-            throw new NotImplementedException();
+            Pin = raw;
         }
 
         public override Memory<byte> Serialize()

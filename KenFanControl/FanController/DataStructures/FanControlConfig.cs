@@ -1,5 +1,6 @@
 ﻿namespace KenFanControl.DataStructures
 {
+#warning is this used?
     public class FanControlConfig : ControllerCommon
     {
         public Matrix[]? Matrixes { get; set; }

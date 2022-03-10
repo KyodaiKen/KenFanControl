@@ -34,11 +34,12 @@
             const int singleSize = 5;
             int dataSize = CurvePoints.Length * singleSize;
 
-            // +1 to add the length byte
-            byte[] payload = new byte[1 + dataSize];
-            payload[0] = (byte)CurvePoints.Length;
+            // +1 to add the curve ide and +1 to add the length byte
+            byte[] payload = new byte[2 + dataSize];
+            payload[0] = ChannelId;
+            payload[1] = (byte)CurvePoints.Length;
 
-            var offset = 1;
+            var offset = 2;
             
             for (int i = 0; i < CurvePoints.Length; i++)
             {

@@ -25,9 +25,25 @@
             ChannelId = channelId;
         }
 
-        public override Memory<byte> Serialize()
+        public byte[] Serialize()
         {
-            throw new NotImplementedException();
+            const int singleSize = 4;
+            var dataSize = MatrixPoints.Length * singleSize;
+
+            // + to add the channel id
+            byte[] payload = new byte[1 + dataSize];
+            payload[0] = ChannelId;
+
+            var offset = 1;
+
+            for (int i = 0; i < MatrixPoints.Length; i++)
+            {
+                var data = BitConverter.GetBytes(MatrixPoints[i]);
+                Array.Copy(data, 0, payload, offset, data.Length);
+                offset += singleSize;
+            }
+
+            return payload;
         }
     }
 }

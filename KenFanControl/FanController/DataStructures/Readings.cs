@@ -40,6 +40,7 @@
             }
         }
 
+#warning delete maybe?
         public Memory<byte> Serialize()
         {
             throw new NotImplementedException();

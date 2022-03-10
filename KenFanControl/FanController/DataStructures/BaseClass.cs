@@ -1,16 +1,7 @@
-﻿//using System.Runtime.Serialization;
-
-using System.Text;
-
-namespace KenFanControl.DataStructures
+﻿namespace KenFanControl.DataStructures
 {
-    public abstract class ControllerCommon// : ISerializable
+    public abstract class ControllerCommon
     {
-        //void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
-        //{
-        //    throw new NotImplementedException();
-        //}
-
         public override string ToString()
         {
             return System.Text.Json.JsonSerializer.Serialize(this);
@@ -30,6 +21,5 @@ namespace KenFanControl.DataStructures
             //builder.AppendLine();
             //return builder.ToString();
         }
-
     }
 }

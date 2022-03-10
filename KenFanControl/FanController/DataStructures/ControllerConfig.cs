@@ -49,10 +49,9 @@ namespace KenFanControl.DataStructures
 
             for (int i = DeviceCapabilities.NumberOfSensors; i < DeviceCapabilities.NumberOfChannels; i++)
             {
-                var channel = new PWMChannel()
-                {
-                    Pin = data.RawPins[i]
-                };
+                var channel = new PWMChannel();
+                
+                channel.Deserialize(data.RawPins[i]);
 
                 PWMChannels[i] = channel;
             }
