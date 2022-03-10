@@ -396,45 +396,29 @@ namespace KenFanControl
         public async Task<Curve> GetCurve(byte channelId)
         {
             const byte commandKey = Protocol.Request.RQST_GET_CURVE;
-            byte[] payload = new byte[1];
-            payload[0] = channelId;
 
             Logger?.LogInformation($"Sending get curve command for curve ID {channelId}...");
-            await SendCommand(commandKey, payload);
+
+            byte[] payload = new byte[1] { channelId };
+
+            var result = await ProcessCommand(commandKey, payload);
+
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
 
             var curve = new Curve();
 
-            var sb = new StringBuilder();
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (value) =>
-            {
-                // Convert data to curve
-                byte len = value[0];
-                byte[] data = value[1..]; //Remove the length from so we only have the curve data.
-
-                sb.AppendLine($"Number of curve points: {len}");
-
-                CurvePoint[] cps = new CurvePoint[len];
-                //Those offsets are headache to the power of 1000
-
-                for (int i = 0; i < len; i++)
-                {
-                    int di = i * 5;
-                    float temp = BitConverter.ToSingle(data.AsSpan()[di..(di + 4)]);
-                    byte dc = data[(di + 4)..(di + 5)][0];
-                    cps[i] = new CurvePoint()
-                    {
-                        Temperature = temp,
-                        DutyCycle = dc
-                    };
-
-                    sb.AppendLine($"Curve point {i}: {temp} => {dc} added!");
-                }
-                curve.ChannelId = channelId;
-                curve.CurvePoints = cps;
-            });
-
-            Logger?.LogDebug(sb.ToString());
+            curve.Deserialize(result.DataSpan, channelId);
 
             return curve;
         }
@@ -442,45 +426,27 @@ namespace KenFanControl
         public async Task<Matrix> GetMatrix(byte channelId)
         {
             const byte commandKey = Protocol.Request.RQST_GET_MATRIX;
-            byte[] payload = new byte[1];
-            payload[0] = channelId;
+            
+            byte[] payload = new byte[1] { channelId };
 
-            Logger?.LogInformation($"Sending get matrix command for channel ID {channelId}...");
-            await SendCommand(commandKey, payload);
+            var result = await ProcessCommand(commandKey, payload);
+
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+
+            }
+            else
+            {
+
+            }
 
             var matrixObj = new Matrix();
 
-            var sb = new StringBuilder();
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                //Convert data to curve
-                //Remove the length from so we only have the curve data.
-
-                sb.AppendLine($"Data length: {DeviceCapabilities.NumberOfChannels} (from device capabilities), length from data: {data.Length / 4}");
-
-                if (data.Length / 4 != DeviceCapabilities.NumberOfChannels)
-                    throw new InvalidDataException("Returned data lentgh has a different length than expected according to" +
-                        "the number of channels on this controller.");
-
-                float[] matrix = new float[DeviceCapabilities.NumberOfChannels];
-
-                for (int i = 0; i < matrix.Length; i++)
-                {
-                    int di = i * 4;
-                    matrix[i] = BitConverter.ToSingle(data.AsSpan()[di..(di + 4)]);
-
-                    sb.Append($"{matrix[i]} ");
-                }
-
-                sb.AppendLine();
-
-                matrixObj.ChannelId = channelId;
-                matrixObj.MatrixPoints = matrix;
-
-            });
-
-            Logger?.LogDebug(sb.ToString());
+            matrixObj.Deserialize(result.DataSpan, channelId, DeviceCapabilities);
 
             return matrixObj;
         }
@@ -493,26 +459,28 @@ namespace KenFanControl
 
             Logger?.LogInformation($"Sending set curve command...");
 
-            int ncp = curve.CurvePoints.Length;
-            byte[] payload = new byte[ncp * 5 + 2];
+            var data = curve.Serialize();
 
-            payload[0] = curveID;
-            payload[1] = (byte)curve.CurvePoints.Length;
-
-            for (int i = 0; i < ncp; i++)
-            {
-                Array.Copy(BitConverter.GetBytes(curve.CurvePoints[i].Temperature), 0, payload, i * 5 + 2, 4);
-                payload[i * 5 + 6] = curve.CurvePoints[i].DutyCycle;
-            }
+            var payload = curveID.Concatenate(data);
 
             Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
 
-            await SendCommand(commandKey, payload);
+            var result = await ProcessCommand(commandKey, payload);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+                // Maybe throw?
+                Logger?.LogError("Err!");
+                return false;
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+                Logger?.LogWarning("Warn!");
+            }
+            else
             {
                 Logger?.LogInformation("OK!");
-            });
+            }
 
             return true;
         }

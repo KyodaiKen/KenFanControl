@@ -5,14 +5,18 @@
         public float Temperature { get; set; }
         public byte DutyCycle { get; set; }
 
-        public override void Deserialize(Span<byte> raw)
+        public void Deserialize(Span<byte> raw)
         {
-            throw new NotImplementedException();
+            Temperature = BitConverter.ToSingle(raw[0..3]);
+            DutyCycle = raw[3..4][0];
         }
 
-        public override Memory<byte> Serialize()
+        public byte[] Serialize()
         {
-            throw new NotImplementedException();
+            var temp = BitConverter.GetBytes(Temperature);
+            var result = temp.Concatenate(DutyCycle);
+
+            return result;
         }
     }
 }

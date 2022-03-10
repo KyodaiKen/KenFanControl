@@ -26,5 +26,35 @@ namespace KenFanControl
             Dictionary.Remove(key);
             return true;
         }
+
+        public static byte[] Concatenate(this byte[] first, byte[] second)
+        {
+            var final = new byte[first.Length + second.Length];
+
+            Array.Copy(first, 0, final, 0, first.Length);
+            Array.Copy(second, 0, final, first.Length, second.Length);
+
+            return final;
+        }
+
+        public static byte[] Concatenate(this byte first, byte[] second)
+        {
+            var final = new byte[1 + second.Length];
+
+            final[0] = first;
+            Array.Copy(second, 0, final, 1, second.Length);
+
+            return final;
+        }
+
+        public static byte[] Concatenate(this byte[] first, byte second)
+        {
+            var final = new byte[first.Length + 1];
+
+            Array.Copy(first, 0, final, 0, first.Length);
+            final[first.Length] = second;
+
+            return final;
+        }
     }
 }
