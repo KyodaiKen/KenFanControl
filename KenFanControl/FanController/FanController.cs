@@ -3,7 +3,6 @@ using KenFanControl.DriverHelpers;
 using Microsoft.Extensions.Logging;
 using RJCP.IO.Ports;
 using System.Buffers;
-using System.Text;
 
 namespace KenFanControl
 {
@@ -493,99 +492,59 @@ namespace KenFanControl
 
             Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
 
-            await SendCommand(commandKey, payload);
+            var result = await ProcessCommand(commandKey, payload);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+                // Maybe throw?
+                Logger?.LogError("Err!");
+                return false;
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+                Logger?.LogWarning("Warn!");
+            }
+            else
             {
                 Logger?.LogInformation("OK!");
-            });
+            }
 
             return true;
         }
 
         public async Task<bool> SetControllerConfig(ControllerConfig ControllerConfig)
         {
-            byte commandKey = Protocol.Request.RQST_SET_CAL_RESISTRS;
+            byte commandKey = Protocol.Request.RQST_SET_CAL_SH_COEFFS;
+            Logger?.LogInformation($"Sending set thermal sensor calibration command...");
 
-            Logger?.LogInformation($"Sending set calibration resistor values command...");
+            byte[] payload = new byte[DeviceCapabilities.NumberOfSensors * ThermalSensor.SerializedSize];
 
-            byte[] payload = new byte[DeviceCapabilities.NumberOfSensors * 4];
+            var offset = 0;
 
             for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
             {
-                Array.Copy(BitConverter.GetBytes(ControllerConfig.ThermalSensors[i].CalibrationResistorValue), 0, payload, i * 4, 4);
+                var src = ControllerConfig.ThermalSensors[i].Serialize();
+                Array.Copy(src, 0, payload, offset, src.Length);
+                offset += ThermalSensor.SerializedSize;
             }
 
             Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
 
-            await SendCommand(commandKey, payload);
+            var result = await ProcessCommand(commandKey, payload);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+                // Maybe throw?
+                Logger?.LogError("Err!");
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+                Logger?.LogWarning("Warn!");
+            }
+            else
             {
                 Logger?.LogInformation("OK!");
-            });
-
-            commandKey = Protocol.Request.RQST_SET_CAL_OFFSETS;
-            Logger?.LogInformation($"Sending set calibration offsets command...");
-
-            for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-            {
-                Array.Copy(BitConverter.GetBytes(ControllerConfig.ThermalSensors[i].CalibrationOffset), 0, payload, i * 4, 4);
             }
-
-            Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
-
-            await SendCommand(commandKey, payload);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                Logger?.LogInformation("OK!");
-            });
-
-            commandKey = Protocol.Request.RQST_SET_CAL_SH_COEFFS;
-            Logger?.LogInformation($"Sending set calibration Steinhart-Hart coefficients command...");
-
-            payload = new byte[DeviceCapabilities.NumberOfSensors * 12];
-
-            for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-            {
-                Array.Copy(BitConverter.GetBytes(ControllerConfig.ThermalSensors[i].CalibrationSteinhartHartCoefficients[0]), 0, payload, i * 12, 4);
-                Array.Copy(BitConverter.GetBytes(ControllerConfig.ThermalSensors[i].CalibrationSteinhartHartCoefficients[1]), 0, payload, i * 12 + 4, 4);
-                Array.Copy(BitConverter.GetBytes(ControllerConfig.ThermalSensors[i].CalibrationSteinhartHartCoefficients[2]), 0, payload, i * 12 + 8, 4);
-            }
-
-            Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
-
-            await SendCommand(commandKey, payload);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                Logger?.LogInformation("OK!");
-            });
-
-            commandKey = Protocol.Request.RQST_SET_PINS;
-            Logger?.LogInformation($"Sending set pins command...");
-
-            payload = new byte[DeviceCapabilities.NumberOfChannels + DeviceCapabilities.NumberOfSensors];
-
-            for (int i = 0; i < DeviceCapabilities.NumberOfSensors; i++)
-            {
-                payload[i] = ControllerConfig.ThermalSensors[i].Pin;
-            }
-
-            for (int i = 0; i < DeviceCapabilities.NumberOfChannels; i++)
-            {
-                payload[i + 3] = ControllerConfig.PWMChannels[i].Pin;
-            }
-
-            Logger?.LogDebug($"Sending payload {Convert.ToHexString(payload)}");
-
-            await SendCommand(commandKey, payload);
-
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
-            {
-                Logger?.LogInformation("OK!");
-            });
 
             return true;
         }
@@ -597,12 +556,23 @@ namespace KenFanControl
             const byte commandKey = Protocol.Request.RQST_WRITE_TO_EEPROM;
 
             Logger?.LogInformation($"Sending RQST_WRITE_TO_EEPROM...");
-            await SendCommand(commandKey);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            var result = await ProcessCommand(commandKey);
+
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+                // Maybe throw?
+                Logger?.LogError("Err!");
+                return false;
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+                Logger?.LogWarning("Warn!");
+            }
+            else
             {
                 Logger?.LogInformation("OK!");
-            });
+            }
 
             return true;
         }
@@ -612,12 +582,23 @@ namespace KenFanControl
             const byte commandKey = Protocol.Request.RQST_READ_FROM_EEPROM;
 
             Logger?.LogInformation($"Sending RQST_READ_FROM_EEPROM...");
-            await SendCommand(commandKey);
 
-            await DoWhenAnswerRecivedWithTimeoutAsync(commandKey, (data) =>
+            var result = await ProcessCommand(commandKey);
+
+            if (result.ReadStatus == ReadStatus.Error)
+            {
+                // Maybe throw?
+                Logger?.LogError("Err!");
+                return false;
+            }
+            else if (result.ReadStatus == ReadStatus.Warning)
+            {
+                Logger?.LogWarning("Warn!");
+            }
+            else
             {
                 Logger?.LogInformation("OK!");
-            });
+            }
 
             return true;
         }

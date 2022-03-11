@@ -10,9 +10,9 @@
             Pin = raw;
         }
 
-        public override Memory<byte> Serialize()
+        public byte Serialize()
         {
-            throw new NotImplementedException();
+            return Pin;
         }
     }
 }

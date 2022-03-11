@@ -6,12 +6,14 @@
         public Matrix[]? Matrixes { get; set; }
         public Curve[]? Curves { get; set; }
 
-        public override void Deserialize(Span<byte> raw)
+#warning unused?
+        public void Deserialize(Span<byte> raw)
         {
             throw new NotImplementedException();
         }
 
-        public override Memory<byte> Serialize()
+#warning unused?
+        public Memory<byte> Serialize()
         {
             throw new NotImplementedException();
         }

@@ -57,6 +57,7 @@ namespace KenFanControl.DataStructures
             }
         }
 
+#warning unused?
         public Memory<byte> Serialize()
         {
             throw new NotImplementedException();
